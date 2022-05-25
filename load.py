@@ -1,4 +1,19 @@
+import os
+import numpy as np
 import pandas as pd
+from scipy import io
+import h5py
+
+def find(dir: str, search_for: str) -> list:
+    '''
+    find dir -name search_for | sort
+    '''
+    path = []
+    for root, _, files in os.walk(dir):
+        for name in files:
+            if search_for in name:
+                path.append(os.path.join(root, name))
+    return sorted(path)
 
 def events(df: pd.DataFrame, session: int) -> pd.DataFrame:
     '''
@@ -50,3 +65,21 @@ def events(df: pd.DataFrame, session: int) -> pd.DataFrame:
             res['stim_1_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
             res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
     return pd.DataFrame(res)
+
+def spiketrain(path: list) -> np.ndarray:
+    '''
+    unit: millisecond
+    srate: 30,000 Hz
+    align_to: session onset
+    '''
+    units = []
+    for p in path:
+        if h5py.is_hdf5(p):
+            with h5py.File(p, 'r') as f:
+                unit = f['timestamps'][:].flatten()
+        else:
+            unit = io.loadmat(p)['timestamps'].flatten()
+        units.append(unit)
+    res = np.concatenate(units)
+    res.sort()
+    return res
