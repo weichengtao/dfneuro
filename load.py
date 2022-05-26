@@ -3,24 +3,26 @@ import numpy as np
 import pandas as pd
 from scipy import io
 import h5py
+from pyns import NSFile
 
 def find(dir: str, search_for: str) -> list:
     '''
     find dir -name search_for | sort
     '''
     path = []
-    for root, _, files in os.walk(dir):
-        for name in files:
+    for root, dirs, files in os.walk(dir):
+        for name in dirs + files:
             if search_for in name:
                 path.append(os.path.join(root, name))
     return sorted(path)
 
-def events(df: pd.DataFrame, session: int) -> pd.DataFrame:
+def events(path: str, session: int) -> pd.DataFrame:
     '''
     unit: second
     srate: 30,000 Hz
     align_to: recording onset
     '''
+    df = pd.read_csv(path)
     marks = {
         'session_on': 11000000 + int(bin(session)[2:]),
         'manual_reward_on': 1100,
@@ -83,3 +85,18 @@ def spiketrain(path: list) -> np.ndarray:
     res = np.concatenate(units)
     res.sort()
     return res
+
+def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float) -> np.ndarray:
+    '''
+    unit: sample
+    srate: 30,000 Hz
+    align_to: epoch onsets
+    '''
+    if isinstance(epoch_onsets, (int, float)):
+        epoch_onsets = [epoch_onsets]
+    epoch_onsets = np.asarray(epoch_onsets).flatten().astype(int)
+    samples_per_epoch = int(samples_per_epoch)
+    nsfile = NSFile(path, proc_single=True)
+    entity = nsfile.entities[channel - 1]
+    lfp = [entity.get_analog_data(onset, samples_per_epoch) for onset in epoch_onsets]
+    return np.asarray(lfp)
