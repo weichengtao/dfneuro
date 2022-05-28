@@ -18,6 +18,12 @@ def find(dir: str, search_for: str) -> list:
 
 def events(path: str, session: int) -> pd.DataFrame:
     '''
+    Input:
+    unit: second
+    srate: 30,000 Hz
+    align_to: recording onset
+
+    Output:
     unit: second
     srate: 30,000 Hz
     align_to: recording onset
@@ -68,12 +74,21 @@ def events(path: str, session: int) -> pd.DataFrame:
             res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
     return pd.DataFrame(res)
 
-def spiketrain(path: list) -> np.ndarray:
+def spiketrain(path: list, epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list:
     '''
+    Input:
     unit: millisecond
     srate: 30,000 Hz
     align_to: session onset
+
+    Output:
+    unit: millisecond
+    srate: 30,000 Hz
+    align_to: epoch onset
     '''
+    if isinstance(epoch_onsets, (int, float)):
+        epoch_onsets = [epoch_onsets]
+    epoch_onsets = np.asarray(epoch_onsets).flatten()
     units = []
     for p in path:
         if h5py.is_hdf5(p):
@@ -82,12 +97,36 @@ def spiketrain(path: list) -> np.ndarray:
         else:
             unit = io.loadmat(p)['timestamps'].flatten()
         units.append(unit)
-    res = np.concatenate(units)
-    res.sort()
+    mua = np.concatenate(units)
+    mua.sort()
+    n_epoch = len(epoch_onsets)
+    n_spike = len(mua)
+    i_spike = 0
+    res = []
+    for i in range(n_epoch):
+        spikes = []
+        left = epoch_onsets[i]
+        right = epoch_onsets[i] + ms_per_epoch
+        for j in range(i_spike, n_spike):
+            s = mua[j]
+            if s < left:
+                continue
+            if s < right:
+                spikes.append(s - left)
+            else:
+                i_spike = j
+                break
+        res.append(np.asarray(spikes))
     return res
 
 def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float) -> np.ndarray:
     '''
+    Input:
+    unit: sample
+    srate: 30,000 Hz
+    align_to: recording onsets
+
+    Output:
     unit: sample
     srate: 30,000 Hz
     align_to: epoch onsets
