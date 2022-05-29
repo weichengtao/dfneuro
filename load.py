@@ -118,7 +118,7 @@ def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | 
         res.append(np.asarray(spikes))
     return res
 
-def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float) -> np.ndarray:
+def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, n_jobs: int = 1) -> np.ndarray:
     '''
     Input:
     unit: sample
@@ -134,7 +134,14 @@ def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | in
         epoch_onsets = [epoch_onsets]
     epoch_onsets = np.asarray(epoch_onsets).flatten().astype(int)
     samples_per_epoch = int(samples_per_epoch)
-    nsfile = NSFile(path, proc_single=True)
-    entity = nsfile.entities[channel - 1]
-    lfp = [entity.get_analog_data(onset, samples_per_epoch) for onset in epoch_onsets]
+    try:
+        from joblib import Parallel, delayed
+    except ImportError:
+        Parallel = None
+    if Parallel:
+        get_data = lambda onset: NSFile(path, proc_single=True).entities[channel - 1].get_analog_data(onset, samples_per_epoch)
+        lfp = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_data)(onset) for onset in epoch_onsets)
+    else:
+        entity = NSFile(path, proc_single=True).entities[channel - 1]
+        lfp = [entity.get_analog_data(onset, samples_per_epoch) for onset in epoch_onsets]
     return np.asarray(lfp)
