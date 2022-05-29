@@ -5,7 +5,7 @@ from scipy import io
 import h5py
 from pyns import NSFile
 
-def find(dir: str, search_for: str) -> list:
+def find(dir: str, search_for: str) -> list[str]:
     '''
     find dir -name search_for | sort
     '''
@@ -16,7 +16,7 @@ def find(dir: str, search_for: str) -> list:
                 path.append(os.path.join(root, name))
     return sorted(path)
 
-def events(path: str, session: int) -> pd.DataFrame:
+def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
     '''
     Input:
     unit: second
@@ -44,8 +44,7 @@ def events(path: str, session: int) -> pd.DataFrame:
         'trial_end': 100000, # 2
     }
     res = {
-        'session_onset': 0, # in unit of sec with 30000 Hz srate
-        'trial_onset': [],
+        'trial_onset': [], # in unit of sec with 30000 Hz srate
         'fix_onset': [],
         'stim_0_onset': [],
         'stim_0_type': 1,
@@ -59,7 +58,7 @@ def events(path: str, session: int) -> pd.DataFrame:
         if not session_on:
             if row['words'] == marks['session_on']:
                 session_on = True
-                res['session_onset'] = row['timestamps']
+                session_onset = row['timestamps']
             else:
                 continue
         if row['words'] == marks['reward_on'] and df.loc[i - 8, 'words'] == marks['trial_start']:
@@ -72,9 +71,9 @@ def events(path: str, session: int) -> pd.DataFrame:
             res['stim_1_onset'].append(df.loc[i - 4, 'timestamps'])
             res['stim_1_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
             res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
-    return pd.DataFrame(res)
+    return pd.DataFrame(res), session_onset
 
-def spiketrain(path: list, epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list:
+def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
     '''
     Input:
     unit: millisecond
