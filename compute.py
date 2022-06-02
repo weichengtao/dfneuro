@@ -1,4 +1,5 @@
 import numpy as np
+from scipy import signal
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -56,17 +57,10 @@ def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float,
         lfp[i] = epoch_lfp
     return lfp
 
-def highpass():
-    pass
-
-def lowpass():
-    pass
-
-def bandpass():
-    pass
-
-def bandstop():
-    pass
+def iir(btype: str, band: list[int | float] | int | float, order: int, sig: np.ndarray, fs: int) -> np.ndarray:
+    sos = signal.butter(order, band, btype, output='sos', fs=fs)
+    res = signal.sosfiltfilt(sos, sig)
+    return res
 
 def downsampling():
     pass
