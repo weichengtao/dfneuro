@@ -19,14 +19,17 @@ def find(dir: str, search_for: str) -> list[str]:
 def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
     '''
     Input:
-    unit: second
-    srate: 30,000 Hz
-    align_to: recording onset
+        path: path to event_markers.csv
+            unit: second
+            precision: 30,000 Hz
+            align_to: recording onset
+        session: session to be extracted
 
     Output:
-    unit: second
-    srate: 30,000 Hz
-    align_to: recording onset
+        events:
+            unit: second
+            precision: 30,000 Hz
+            align_to: recording onset
     '''
     df = pd.read_csv(path)
     marks = {
@@ -76,14 +79,27 @@ def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
 def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
     '''
     Input:
-    unit: millisecond
-    srate: 30,000 Hz
-    align_to: session onset
+        path: list of paths to unit.mat
+            shape: ( x spikes, )
+            fs: spike
+            unit: ms
+            precision: 30,000 Hz
+            align_to: session onset
+        epoch_onsets:
+            shape: ( m epochs, )
+            fs: epoch
+            unit: ms
+            precision: 30,000 Hz
+            align_to: session onset
+        ms_per_epoch: epoch duration in unit of ms
 
     Output:
-    unit: millisecond
-    srate: 30,000 Hz
-    align_to: epoch onset
+        spikes:
+            shape: m epochs of ( >= 0 spikes, )
+            fs: spike
+            unit: ms
+            precision: 30,000 Hz
+            align_to: epoch onset
     '''
     if isinstance(epoch_onsets, (int, float)):
         epoch_onsets = [epoch_onsets]
@@ -121,14 +137,27 @@ def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | 
 def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, n_jobs: int = 1) -> np.ndarray:
     '''
     Input:
-    unit: sample
-    srate: 30,000 Hz
-    align_to: recording onsets
+        path: path to ns5 file
+            shape: ( x samples, )
+            fs: 30,000 Hz
+            unit: miuV
+            align_to: recording onset
+        channel: channel to be extracted
+        epoch_onsets:
+            shape: ( m epochs, )
+            fs: epoch
+            unit: sample:
+            precision: 30,000 Hz
+            align_to: recording onset
+        samples_per_epoch: epoch duration in unit of sample
+        n_jobs = 1: number of jobs to be used if joblib is available
 
     Output:
-    unit: sample
-    srate: 30,000 Hz
-    align_to: epoch onsets
+        lfp:
+            shape: ( n epochs, n samples)
+            fs: 30,000 Hz
+            unit: miuV
+            align_to: epoch onset
     '''
     if isinstance(epoch_onsets, (int, float)):
         epoch_onsets = [epoch_onsets]

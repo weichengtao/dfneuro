@@ -12,6 +12,7 @@ def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float,
             shape: m epochs of ( >= 0 spikes, )
             fs: spike
             unit: ms
+            precision: u * 1,000 Hz
             align_to: epoch onset
         onset:
             unit: ms
