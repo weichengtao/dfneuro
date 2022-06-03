@@ -62,11 +62,63 @@ def iir(btype: str, band: list[int | float] | int | float, order: int, sig: np.n
     res = signal.sosfiltfilt(sos, sig)
     return res
 
-def downsampling():
-    pass
+def downsampling(sig: np.ndarray, factor: int = 30, ftype: str = 'fir') -> np.ndarray:
+    return signal.decimate(sig, factor, ftype=ftype)
 
-def spectrogram():
-    pass
+def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: int | float, half_bandwidth: int | float, fs: int = 1000, n_jobs: int = 1) -> tuple[np.ndarray, ...]:
+    '''
+    Input:
+        lfp:
+            shape: ( m epochs, n samples )
+            fs: fs
+            unit: miuV
+            align_to: epoch onset
+        fmin, fmax:
+            20, 120 Hz -> 20-120 Hz of the spectrogram will be returned
+        window_width:
+            unit: second
+        half_bandwidth:
+            unit: Hz
+        fs = 1000:
+            30,000 Hz -> raw lfp
+            1,000 Hz -> downsampled lfp
+
+    Output:
+        f:
+            align_to: 0 Hz
+        t:
+            align_to: epoch onset
+        Sxx:
+            shape: ( m epochs, fmax - fmin + 1 frequencies, n samples / fs * 1000 + 1)
+            fs: 1 Hz * 1 ms
+            unit: miuV^2/Hz
+            align_to: epoch onset
+    '''
+    try:
+        from joblib import Parallel, delayed
+    except ImportError:
+        Parallel = None
+    M = int(fs * window_width)
+    NW = window_width * half_bandwidth
+    K = int(np.floor(NW * 2) - 1)
+    dpss_windows = signal.windows.dpss(M, NW, K, sym=True, norm=2, return_ratios=False)
+    noverlap = int(M - fs / 1000)
+    fmax_exclusive = fmax + 1
+    res = []
+    for i in range(len(lfp)):
+        epoch_lfp = lfp[i]
+        if Parallel:
+            get_Sxx = lambda window: signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
+            epoch_Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_Sxx)(window) for window in dpss_windows)
+        else:
+            epoch_Sxx = []
+            for window in dpss_windows:
+                Sxx = signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
+                epoch_Sxx.append(Sxx)
+        res.append(np.asarray(epoch_Sxx).mean(axis=0))
+    f, t = signal.spectrogram(lfp[0], fs, dpss_windows[0], M, noverlap, fs)[:-1]
+    f = f[fmin:fmax_exclusive]
+    return f, t, np.asarray(res)
 
 def gamma_burst():
     pass
