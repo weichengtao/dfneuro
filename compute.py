@@ -120,5 +120,18 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
     f = f[fmin:fmax_exclusive]
     return f, t, np.asarray(res)
 
-def gamma_burst():
-    pass
+def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], float]:
+    m = sig.mean()
+    sd = sig.std()
+    thresh = m + 2 * sd
+    above_thresh = np.nonzero(sig > thresh)[0]
+    diff = np.diff(above_thresh)
+    left = np.nonzero(diff > 1)[0] + 1
+    left = np.insert(left, 0, 0)
+    left = np.append(left, len(above_thresh))
+    width = np.diff(left)
+    res = []
+    for i, w in enumerate(width):
+        if w > wmin:
+            res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
+    return res, thresh
