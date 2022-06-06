@@ -121,7 +121,7 @@ def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | 
     for i in range(n_epoch):
         spikes = []
         left = epoch_onsets[i]
-        right = epoch_onsets[i] + ms_per_epoch
+        right = epoch_onsets[i] + ms_per_epoch - 0.5
         for j in range(i_spike, n_spike):
             s = mua[j]
             if s < left:
