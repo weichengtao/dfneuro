@@ -65,6 +65,18 @@ def iir(btype: str, band: list[int | float] | int | float, order: int, sig: np.n
 def downsampling(sig: np.ndarray, factor: int = 30, ftype: str = 'fir') -> np.ndarray:
     return signal.decimate(sig, factor, ftype=ftype)
 
+def firing_rate(spikes: np.ndarray, duration: int | float, fs: int = 1000, kernel: np.ndarray | None = None) -> np.ndarray:
+    firing_rate = np.zeros(int(duration * fs))
+    rint_spikes = np.rint(spikes / 1000 * fs).astype(int)
+    firing_rate[rint_spikes] = 1
+    if not kernel:
+        # boxcar kernel, 50ms duration, normalized by duration
+        kernel_duration = 0.05
+        kernel_width = int(kernel_duration * fs)
+        kernel = np.ones(kernel_width) / kernel_duration
+    firing_rate = signal.convolve(firing_rate, kernel, mode='same')
+    return firing_rate
+
 def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: int | float, half_bandwidth: int | float, fs: int = 1000, n_jobs: int = 1) -> tuple[np.ndarray, ...]:
     '''
     Input:
