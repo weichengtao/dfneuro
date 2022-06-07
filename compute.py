@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import signal
+from scipy import signal, stats
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -131,6 +131,15 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
     f, t = signal.spectrogram(lfp[0], fs, dpss_windows[0], M, noverlap, fs)[:-1]
     f = f[fmin:fmax_exclusive]
     return f, t, np.asarray(res)
+
+def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: int | float = 0.4) -> bool:
+    near = lambda arr, x: np.argmin((arr - x) ** 2) # find nearest index of x in arr
+    t_ = t - pre_duration # t realigned to stimulus onset
+    gmin, gmax = 50, 120
+    pre = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, -0.2):near(t_, 0)].mean(axis=(1, 2))
+    post = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, 0.1):near(t_, 0.3)].mean(axis=(1, 2))
+    _, p = stats.wilcoxon(pre, post, alternative='less')
+    return p < 0.05
 
 def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], float]:
     m = sig.mean()
