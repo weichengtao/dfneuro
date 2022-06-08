@@ -141,10 +141,27 @@ def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: in
     _, p = stats.wilcoxon(pre, post, alternative='less')
     return p < 0.05
 
-def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], float]:
-    m = sig.mean()
-    sd = sig.std()
-    thresh = m + 2 * sd
+def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None) -> tuple[list[tuple[int, int]], float]:
+    '''
+    Input:
+        sig:
+            fs: 1,000 Hz
+            unit: miuV
+        wmin:
+            unit: ms
+        thresh: optional
+            unit: miuV
+
+    Output:
+        bur: list[tuple[start_idx, end_idx]]
+            unit: ms
+            align_to: signal onset
+        thresh: threshold of magnitude for extracting burst (computed based on sig)
+    '''
+    if not thresh:
+        m = sig.mean()
+        sd = sig.std()
+        thresh = m + 2 * sd
     above_thresh = np.nonzero(sig > thresh)[0]
     diff = np.diff(above_thresh)
     left = np.nonzero(diff > 1)[0] + 1
@@ -156,3 +173,11 @@ def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], fl
         if w > wmin:
             res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
     return res, thresh
+
+def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0) -> list[tuple[int, int]]:
+    sig = np.zeros(epoch_samples)
+    for bur in burst_list:
+        for start, end in bur:
+            sig[start:end + 1] = 1
+    res = burst(sig, wmin, 0.5)[0]
+    return res
