@@ -141,7 +141,7 @@ def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: in
     _, p = stats.wilcoxon(pre, post, alternative='less')
     return p < 0.05
 
-def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None) -> tuple[list[tuple[int, int]], float]:
+def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None, greater: bool = True) -> tuple[list[tuple[int, int]], float]:
     '''
     Input:
         sig:
@@ -150,8 +150,11 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None)
         wmin:
             unit: ms
         thresh: optional
+            default: mean + 2 * sd of sig
             unit: miuV
-
+        greater:
+            True -> greater than thresh
+            False -> less than thresh
     Output:
         bur: list[tuple[start_idx, end_idx]]
             unit: ms
@@ -162,7 +165,10 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None)
         m = sig.mean()
         sd = sig.std()
         thresh = m + 2 * sd
-    above_thresh = np.nonzero(sig > thresh)[0]
+    if greater:
+        above_thresh = np.nonzero(sig > thresh)[0]
+    else:
+        above_thresh = np.nonzero(sig < thresh)[0]
     diff = np.diff(above_thresh)
     left = np.nonzero(diff > 1)[0] + 1
     left = np.insert(left, 0, 0)
@@ -174,10 +180,13 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None)
             res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
     return res, thresh
 
-def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0) -> list[tuple[int, int]]:
+def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False) -> list[tuple[int, int]]:
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
         for start, end in bur:
-            sig[start:end + 1] = 1
-    res = burst(sig, wmin, 0.5)[0]
+            sig[start:end + 1] = sig[start:end + 1] + 1
+    if overlap:
+        res = burst(sig, wmin, len(burst_list) - 0.5)[0]
+    else:
+        res = burst(sig, wmin, 0.5)[0]
     return res
