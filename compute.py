@@ -190,3 +190,18 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
     else:
         res = burst(sig, wmin, 0.5)[0]
     return res
+
+def pev(samples, tags, conditions):
+    samples = np.asarray(samples)
+    tags = np.asarray(tags)
+    grouped_samples = [samples[tags == cond] for cond in conditions]
+    sst = np.sum((samples - samples.mean()) ** 2)
+    if sst == 0:
+        return None
+    sse = np.sum([np.sum((arr - arr.mean()) ** 2) for arr in grouped_samples])
+    ssb = sst - sse
+    dfe = len(samples) - len(conditions)
+    dfb = len(conditions) - 1
+    mse = sse / dfe
+    omega_squared = (ssb - dfb * mse) / (mse + sst)
+    return omega_squared
