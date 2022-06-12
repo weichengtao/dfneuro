@@ -180,11 +180,13 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
             res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
     return res, thresh
 
-def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False) -> list[tuple[int, int]]:
+def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
         for start, end in bur:
             sig[start:end + 1] = sig[start:end + 1] + 1
+    if offset_samples > 0:
+        sig = sig[offset_samples:]
     if overlap:
         res = burst(sig, wmin, len(burst_list) - 0.5)[0]
     else:
