@@ -1,5 +1,5 @@
 import numpy as np
-from scipy import signal
+from scipy import signal, stats
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -132,11 +132,43 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
     f = f[fmin:fmax_exclusive]
     return f, t, np.asarray(res)
 
-def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], float]:
-    m = sig.mean()
-    sd = sig.std()
-    thresh = m + 2 * sd
-    above_thresh = np.nonzero(sig > thresh)[0]
+def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: int | float = 0.4) -> bool:
+    near = lambda arr, x: np.argmin((arr - x) ** 2) # find nearest index of x in arr
+    t_ = t - pre_duration # t realigned to stimulus onset
+    gmin, gmax = 50, 120
+    pre = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, -0.2):near(t_, 0)].mean(axis=(1, 2))
+    post = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, 0.1):near(t_, 0.3)].mean(axis=(1, 2))
+    _, p = stats.wilcoxon(pre, post, alternative='less')
+    return p < 0.05
+
+def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None, greater: bool = True) -> tuple[list[tuple[int, int]], float]:
+    '''
+    Input:
+        sig:
+            fs: 1,000 Hz
+            unit: miuV
+        wmin:
+            unit: ms
+        thresh: optional
+            default: mean + 2 * sd of sig
+            unit: miuV
+        greater:
+            True -> greater than thresh
+            False -> less than thresh
+    Output:
+        bur: list[tuple[start_idx, end_idx]]
+            unit: ms
+            align_to: signal onset
+        thresh: threshold of magnitude for extracting burst (computed based on sig)
+    '''
+    if not thresh:
+        m = sig.mean()
+        sd = sig.std()
+        thresh = m + 2 * sd
+    if greater:
+        above_thresh = np.nonzero(sig > thresh)[0]
+    else:
+        above_thresh = np.nonzero(sig < thresh)[0]
     diff = np.diff(above_thresh)
     left = np.nonzero(diff > 1)[0] + 1
     left = np.insert(left, 0, 0)
@@ -147,3 +179,31 @@ def burst(sig: np.ndarray, wmin: int | float) -> tuple[list[tuple[int, int]], fl
         if w > wmin:
             res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
     return res, thresh
+
+def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
+    sig = np.zeros(epoch_samples)
+    for bur in burst_list:
+        for start, end in bur:
+            sig[start:end + 1] = sig[start:end + 1] + 1
+    if offset_samples > 0:
+        sig = sig[offset_samples:]
+    if overlap:
+        res = burst(sig, wmin, len(burst_list) - 0.5)[0]
+    else:
+        res = burst(sig, wmin, 0.5)[0]
+    return res
+
+def pev(samples, tags, conditions):
+    samples = np.asarray(samples)
+    tags = np.asarray(tags)
+    grouped_samples = [samples[tags == cond] for cond in conditions]
+    sst = np.sum((samples - samples.mean()) ** 2)
+    if sst == 0:
+        return None
+    sse = np.sum([np.sum((arr - arr.mean()) ** 2) for arr in grouped_samples])
+    ssb = sst - sse
+    dfe = len(samples) - len(conditions)
+    dfb = len(conditions) - 1
+    mse = sse / dfe
+    omega_squared = (ssb - dfb * mse) / (mse + sst)
+    return omega_squared
