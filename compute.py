@@ -195,6 +195,24 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
         res = burst(sig, wmin, 0.5)[0]
     return res
 
+def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], i_trial: int, offset_samples: int = 0) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    # active state
+    burst_list = []
+    # silent state
+    burst_list_ = []
+    for fmin, fmax in bands:
+        wmin = 1000 / ((fmax + fmin) / 2) * 3
+        sig = Sxx[i_trial, fmin-20:fmax-20 + 1].mean(axis=0)
+        # active state
+        bur = burst(sig, wmin, thresh=sig.mean() + 2 * sig.std())[0]
+        burst_list.append(bur)
+        # silent state
+        bur_ = burst(sig, wmin, thresh=sig.mean(), greater=False)[0]
+        burst_list_.append(bur_)
+    active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
+    silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
+    return active, silent
+
 def pev(samples, tags, conditions):
     samples = np.asarray(samples)
     tags = np.asarray(tags)
