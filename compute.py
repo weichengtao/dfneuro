@@ -213,7 +213,7 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
     silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
     return active, silent
 
-def pev(samples, tags, conditions):
+def pev(samples, tags, conditions) -> float | None:
     samples = np.asarray(samples)
     tags = np.asarray(tags)
     grouped_samples = [samples[tags == cond] for cond in conditions]
@@ -227,3 +227,15 @@ def pev(samples, tags, conditions):
     mse = sse / dfe
     omega_squared = (ssb - dfb * mse) / (mse + sst)
     return omega_squared
+
+def burst_pev(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray) -> float | None:
+    conditions = np.unique(tags)
+    fr_per_burst = []
+    tag_per_burst = []
+    for i_trial, bur in enumerate(bursts):
+        trial_spikes = spikes[i_trial]
+        for start, end in bur:
+            burst_spikes = trial_spikes[(trial_spikes >= start) & (trial_spikes <= end)]
+            fr_per_burst.append(len(burst_spikes) / (end - start)) # in unit of spikes/ms
+            tag_per_burst.append(tags[i_trial])
+    return pev(fr_per_burst, tag_per_burst, conditions)
