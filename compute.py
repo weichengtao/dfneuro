@@ -195,7 +195,8 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
         res = burst(sig, wmin, 0.5)[0]
     return res
 
-def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], i_trial: int, offset_samples: int = 0) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
+    i_trial: int, offset_samples: int = 0) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
     # active state
     burst_list = []
     # silent state
@@ -203,11 +204,13 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
     for fmin, fmax in bands:
         wmin = 1000 / ((fmax + fmin) / 2) * 3
         sig = Sxx[i_trial, fmin-20:fmax-20 + 1].mean(axis=0)
+        sig_mean = sig.mean()
+        sig_sd = sig.std()
         # active state
-        bur = burst(sig, wmin, thresh=sig.mean() + 2 * sig.std())[0]
+        bur = burst(sig, wmin, thresh=sig_mean + active_sd * sig_sd)[0]
         burst_list.append(bur)
         # silent state
-        bur_ = burst(sig, wmin, thresh=sig.mean(), greater=False)[0]
+        bur_ = burst(sig, wmin, thresh=sig_mean + silent_sd * sig_sd, greater=False)[0]
         burst_list_.append(bur_)
     active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
     silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
