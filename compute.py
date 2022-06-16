@@ -1,5 +1,12 @@
+from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.svm import LinearSVC
+from sklearn.utils._testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -231,7 +238,21 @@ def pev(samples, tags, conditions) -> float | None:
     omega_squared = (ssb - dfb * mse) / (mse + sst)
     return omega_squared
 
-def burst_pev(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray) -> float | None:
+@ignore_warnings(category=ConvergenceWarning)
+def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1) -> np.ndarray:
+    X = np.asarray(samples)[:, np.newaxis]
+    le = LabelEncoder()
+    le.fit(conditions)
+    y = le.transform(tags)
+    clf = make_pipeline(StandardScaler(), LinearSVC())
+    cv = StratifiedKFold(n_splits, shuffle=True)
+    res = []
+    for i in range(n_repeats):
+        scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
+        res.extend(scores)
+    return np.asarray(res)
+
+def burst_info(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable) -> np.ndarray | float | None:
     conditions = np.unique(tags)
     fr_per_burst = []
     tag_per_burst = []
@@ -241,4 +262,4 @@ def burst_pev(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.
             burst_spikes = trial_spikes[(trial_spikes >= start) & (trial_spikes <= end)]
             fr_per_burst.append(len(burst_spikes) / (end - start)) # in unit of spikes/ms
             tag_per_burst.append(tags[i_trial])
-    return pev(fr_per_burst, tag_per_burst, conditions)
+    return ifunc(fr_per_burst, tag_per_burst, conditions)
