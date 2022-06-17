@@ -1,5 +1,12 @@
+from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.pipeline import make_pipeline
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+from sklearn.svm import LinearSVC
+from sklearn.utils._testing import ignore_warnings
+from sklearn.exceptions import ConvergenceWarning
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -195,7 +202,28 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
         res = burst(sig, wmin, 0.5)[0]
     return res
 
-def pev(samples, tags, conditions):
+def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
+    i_trial: int, offset_samples: int = 0) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    # active state
+    burst_list = []
+    # silent state
+    burst_list_ = []
+    for fmin, fmax in bands:
+        wmin = 1000 / ((fmax + fmin) / 2) * 3
+        sig = Sxx[i_trial, fmin-20:fmax-20 + 1].mean(axis=0)
+        sig_mean = sig.mean()
+        sig_sd = sig.std()
+        # active state
+        bur = burst(sig, wmin, thresh=sig_mean + active_sd * sig_sd)[0]
+        burst_list.append(bur)
+        # silent state
+        bur_ = burst(sig, wmin, thresh=sig_mean + silent_sd * sig_sd, greater=False)[0]
+        burst_list_.append(bur_)
+    active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
+    silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
+    return active, silent
+
+def pev(samples, tags, conditions) -> float | None:
     samples = np.asarray(samples)
     tags = np.asarray(tags)
     grouped_samples = [samples[tags == cond] for cond in conditions]
@@ -209,3 +237,29 @@ def pev(samples, tags, conditions):
     mse = sse / dfe
     omega_squared = (ssb - dfb * mse) / (mse + sst)
     return omega_squared
+
+@ignore_warnings(category=ConvergenceWarning)
+def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1) -> np.ndarray:
+    X = np.asarray(samples)[:, np.newaxis]
+    le = LabelEncoder()
+    le.fit(conditions)
+    y = le.transform(tags)
+    clf = make_pipeline(StandardScaler(), LinearSVC())
+    cv = StratifiedKFold(n_splits, shuffle=True)
+    res = []
+    for i in range(n_repeats):
+        scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
+        res.extend(scores)
+    return np.asarray(res)
+
+def burst_info(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable) -> np.ndarray | float | None:
+    conditions = np.unique(tags)
+    fr_per_burst = []
+    tag_per_burst = []
+    for i_trial, bur in enumerate(bursts):
+        trial_spikes = spikes[i_trial]
+        for start, end in bur:
+            burst_spikes = trial_spikes[(trial_spikes >= start) & (trial_spikes <= end)]
+            fr_per_burst.append(len(burst_spikes) / (end - start)) # in unit of spikes/ms
+            tag_per_burst.append(tags[i_trial])
+    return ifunc(fr_per_burst, tag_per_burst, conditions)

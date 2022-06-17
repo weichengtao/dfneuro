@@ -76,10 +76,10 @@ def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
             res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
     return pd.DataFrame(res), session_onset
 
-def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
+def spiketrain(path: list[str] | str, epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
     '''
     Input:
-        path: list of paths to unit.mat
+        path: list of paths or a single path to unit.mat
             shape: ( x spikes, )
             fs: spike
             unit: ms
@@ -101,6 +101,8 @@ def spiketrain(path: list[str], epoch_onsets: np.ndarray | list | tuple | int | 
             precision: 30,000 Hz
             align_to: epoch onset
     '''
+    if isinstance(path, str):
+        path = [path]
     if isinstance(epoch_onsets, (int, float)):
         epoch_onsets = [epoch_onsets]
     epoch_onsets = np.asarray(epoch_onsets).flatten()
