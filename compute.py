@@ -239,20 +239,22 @@ def pev(samples, tags, conditions) -> float | None:
     return omega_squared
 
 @ignore_warnings(category=ConvergenceWarning)
-def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1) -> np.ndarray:
+def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
     X = np.asarray(samples)[:, np.newaxis]
     le = LabelEncoder()
     le.fit(conditions)
     y = le.transform(tags)
-    clf = make_pipeline(StandardScaler(), LinearSVC())
-    cv = StratifiedKFold(n_splits, shuffle=True)
+    if isinstance(rng, int):
+        rng = np.random.RandomState(rng) # splits are different across repeats
+    clf = make_pipeline(StandardScaler(), LinearSVC(dual=False)) # prefer dual=False when n_samples > n_features
+    cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
     res = []
     for i in range(n_repeats):
         scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
         res.extend(scores)
     return np.asarray(res)
 
-def burst_info(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable) -> np.ndarray | float | None:
+def burst_info(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable, rng: int | np.random.RandomState | None = None) -> np.ndarray | float | None:
     conditions = np.unique(tags)
     fr_per_burst = []
     tag_per_burst = []
@@ -262,4 +264,7 @@ def burst_info(bursts: list[tuple[int, int]], spikes: list[np.ndarray], tags: np
             burst_spikes = trial_spikes[(trial_spikes >= start) & (trial_spikes <= end)]
             fr_per_burst.append(len(burst_spikes) / (end - start)) # in unit of spikes/ms
             tag_per_burst.append(tags[i_trial])
-    return ifunc(fr_per_burst, tag_per_burst, conditions)
+    if rng is not None:
+        return ifunc(fr_per_burst, tag_per_burst, conditions, rng=rng)
+    else:
+        return ifunc(fr_per_burst, tag_per_burst, conditions)
