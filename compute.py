@@ -202,6 +202,9 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
         res = burst(sig, wmin, 0.5)[0]
     return res
 
+def state_duration(burst: list[tuple[int, int]]) -> int:
+    return np.sum([b[1] - b[0] + 1 for b in burst])
+
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
     i_trial: int, offset_samples: int = 0, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
     # active state
@@ -222,7 +225,6 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
     active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
     silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
     if return_duration:
-        state_duration = lambda lst: np.sum([b[1] - b[0] + 1 for b in lst])
         return state_duration(active), state_duration(silent) # in unit of ms
     return active, silent
 
