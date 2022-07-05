@@ -188,7 +188,7 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
     return res, thresh
 
 def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
-    if (overlap or offset_samples > 0) and epoch_samples == 0:
+    if (overlap or offset_samples > 0) and wmin == 0:
         raise ValueError('if overlap == True or offset_samples > 0, the wmin should be greater than 0 to prevent ZeroDivisionError in downstream processing')
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
