@@ -188,7 +188,7 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
     return res, thresh
 
 def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
-    if (overlap or offset_samples > 0) and epoch_samples == 0:
+    if (overlap or offset_samples > 0) and wmin == 0:
         raise ValueError('if overlap == True or offset_samples > 0, the wmin should be greater than 0 to prevent ZeroDivisionError in downstream processing')
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
@@ -201,6 +201,32 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
     else:
         res = burst(sig, wmin, 0.5)[0]
     return res
+
+def state_duration(bursts: list[tuple[int, int]]) -> int:
+    return np.sum([b[1] - b[0] + 1 for b in bursts])
+
+def shuffle_burst(bursts: list[tuple[int, int]], epoch_samples: int, rng: int | np.random.RandomState | None = None) -> list[tuple[int, int]]:
+    bursts = bursts[:]
+    n_burst = len(bursts)
+    burst_duration = state_duration(bursts)
+    off_burst_duration = epoch_samples - burst_duration
+    total = off_burst_duration + 1
+    # choose n_burst samples from total
+    if not isinstance(rng, np.random.RandomState):
+        rng = np.random.RandomState(rng)
+    slots = np.sort(rng.choice(total, n_burst, replace=False))
+    # shuffle the order of bursts
+    rng.shuffle(bursts)
+    # insert burst before those samples
+    sig = np.zeros(epoch_samples)
+    offset = 0
+    for i, b in enumerate(bursts):
+        s = slots[i]
+        b_duration = b[1] - b[0] + 1
+        start, end = offset + s, offset + s + b_duration
+        sig[start:end] = 1
+        offset = offset + b_duration
+    return burst(sig, 0, 0.5)[0]
 
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
     i_trial: int, offset_samples: int = 0, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
@@ -222,7 +248,6 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
     active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
     silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
     if return_duration:
-        state_duration = lambda lst: np.sum([b[1] - b[0] + 1 for b in lst])
         return state_duration(active), state_duration(silent) # in unit of ms
     return active, silent
 
