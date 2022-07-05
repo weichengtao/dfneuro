@@ -203,7 +203,7 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
     return res
 
 def state_duration(bursts: list[tuple[int, int]]) -> int:
-    return np.sum([b[1] - b[0] + 1 for b in bursts])
+    return int(np.sum([b[1] - b[0] + 1 for b in bursts]))
 
 def shuffle_burst(bursts: list[tuple[int, int]], epoch_samples: int, rng: int | np.random.RandomState | None = None) -> list[tuple[int, int]]:
     bursts = bursts[:]
