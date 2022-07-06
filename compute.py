@@ -184,7 +184,7 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
     res = []
     for i, w in enumerate(width):
         if w > wmin:
-            res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
+            res.append((int(above_thresh[left[i]]), int(above_thresh[left[i + 1] - 1])))
     return res, thresh
 
 def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
@@ -225,7 +225,7 @@ def shuffle_burst(bursts: list[tuple[int, int]], epoch_samples: int, rng: int | 
         b_duration = b[1] - b[0] + 1
         start, end = offset + s, offset + s + b_duration
         sig[start:end] = 1
-        offset = offset + b_duration
+        offset += b_duration
     return burst(sig, 0, 0.5)[0]
 
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
