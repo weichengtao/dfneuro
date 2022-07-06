@@ -1,6 +1,7 @@
 from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from numba import njit
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -219,6 +220,20 @@ def shuffle_burst(bursts: list[tuple[int, int]], off_burst_duration: int, rng: i
     offset = 0
     for i, b in enumerate(bursts):
         s = int(slots[i])
+        b_duration = b[1] - b[0] + 1
+        res.append((offset + s, offset + s + b_duration - 1))
+        offset += b_duration
+    return res
+
+@njit
+def shuffle_burst_jit(bursts: np.ndarray, off_burst_duration: int) -> list[tuple[int, int]]:
+    slots = np.random.choice(off_burst_duration + 1, len(bursts), replace=False)
+    order = np.argsort(slots)
+    res = []
+    offset = 0
+    for i in order:
+        s = slots[i]
+        b = bursts[i]
         b_duration = b[1] - b[0] + 1
         res.append((offset + s, offset + s + b_duration - 1))
         offset += b_duration
