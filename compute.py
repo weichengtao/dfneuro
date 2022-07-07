@@ -206,6 +206,10 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
 def state_duration(bursts: list[tuple[int, int]]) -> int:
     return int(np.sum([b[1] - b[0] + 1 for b in bursts]))
 
+@njit
+def state_duration_jit(bursts: np.ndarray) -> int:
+    return int(np.sum(bursts[:, 1] - bursts[:, 0] + 1))
+
 def shuffle_burst(bursts: list[tuple[int, int]], off_burst_duration: int, rng: int | np.random.RandomState | None = None) -> list[tuple[int, int]]:
     bursts = bursts[:]
     n_burst = len(bursts)
@@ -238,6 +242,22 @@ def shuffle_burst_jit(bursts: np.ndarray, off_burst_duration: int) -> list[tuple
         res.append((offset + s, offset + s + b_duration - 1))
         offset += b_duration
     return res
+
+def concat_burst(bursts: list[list[tuple[int, int]]], poststim_samples: int, offset: int = 0) -> np.ndarray:
+    '''
+    offset:
+        -x -> shift bursts to the left
+        x -> shift bursts to the right
+        if a burst is shifted out of the trial, it will be truncated
+    '''
+    n_trial = len(bursts)
+    res = np.zeros((n_trial, poststim_samples))
+    for i, trial_bursts in enumerate(bursts):
+        for start, end in trial_bursts:
+            s = min(poststim_samples, max(0, start + offset))
+            e = min(poststim_samples, max(0, end + offset + 1))
+            res[i, s:e] = 1
+    return res.flatten()
 
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
     i_trial: int, offset_samples: int = 0, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
