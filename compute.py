@@ -1,6 +1,7 @@
 from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from numba import njit
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder
@@ -184,11 +185,11 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
     res = []
     for i, w in enumerate(width):
         if w > wmin:
-            res.append((above_thresh[left[i]], above_thresh[left[i + 1] - 1]))
+            res.append((int(above_thresh[left[i]]), int(above_thresh[left[i + 1] - 1])))
     return res, thresh
 
 def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
-    if (overlap or offset_samples > 0) and epoch_samples == 0:
+    if (overlap or offset_samples > 0) and wmin == 0:
         raise ValueError('if overlap == True or offset_samples > 0, the wmin should be greater than 0 to prevent ZeroDivisionError in downstream processing')
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
@@ -202,8 +203,64 @@ def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, w
         res = burst(sig, wmin, 0.5)[0]
     return res
 
+def state_duration(bursts: list[tuple[int, int]]) -> int:
+    return int(np.sum([b[1] - b[0] + 1 for b in bursts]))
+
+@njit
+def state_duration_jit(bursts: np.ndarray) -> int:
+    return int(np.sum(bursts[:, 1] - bursts[:, 0] + 1))
+
+def shuffle_burst(bursts: list[tuple[int, int]], off_burst_duration: int, rng: int | np.random.RandomState | None = None) -> list[tuple[int, int]]:
+    bursts = bursts[:]
+    n_burst = len(bursts)
+    # choose n_burst samples from total
+    if not isinstance(rng, np.random.RandomState):
+        rng = np.random.RandomState(rng)
+    slots = np.sort(rng.choice(off_burst_duration + 1, n_burst, replace=False))
+    # shuffle the order of bursts
+    rng.shuffle(bursts)
+    # insert burst before those samples
+    res = []
+    offset = 0
+    for i, b in enumerate(bursts):
+        s = int(slots[i])
+        b_duration = b[1] - b[0] + 1
+        res.append((offset + s, offset + s + b_duration - 1))
+        offset += b_duration
+    return res
+
+@njit
+def shuffle_burst_jit(bursts: np.ndarray, off_burst_duration: int) -> list[tuple[int, int]]:
+    slots = np.random.choice(off_burst_duration + 1, len(bursts), replace=False)
+    order = np.argsort(slots)
+    res = []
+    offset = 0
+    for i in order:
+        s = slots[i]
+        b = bursts[i]
+        b_duration = b[1] - b[0] + 1
+        res.append((offset + s, offset + s + b_duration - 1))
+        offset += b_duration
+    return res
+
+def concat_burst(bursts: list[list[tuple[int, int]]], poststim_samples: int, offset: int = 0) -> np.ndarray:
+    '''
+    offset:
+        -x -> shift bursts to the left
+        x -> shift bursts to the right
+        if a burst is shifted out of the trial, it will be truncated
+    '''
+    n_trial = len(bursts)
+    res = np.zeros((n_trial, poststim_samples))
+    for i, trial_bursts in enumerate(bursts):
+        for start, end in trial_bursts:
+            s = min(poststim_samples, max(0, start + offset))
+            e = min(poststim_samples, max(0, end + offset + 1))
+            res[i, s:e] = 1
+    return res.flatten()
+
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
-    i_trial: int, offset_samples: int = 0) -> tuple[list[tuple[int, int]], list[tuple[int, int]]]:
+    i_trial: int, offset_samples: int = 0, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
     # active state
     burst_list = []
     # silent state
@@ -221,6 +278,8 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
         burst_list_.append(bur_)
     active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
     silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
+    if return_duration:
+        return state_duration(active), state_duration(silent) # in unit of ms
     return active, silent
 
 def pev(samples, tags, conditions) -> float | None:
