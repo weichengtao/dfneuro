@@ -314,7 +314,7 @@ def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_job
     return np.asarray(res)
 
 def burst_info(bursts: list[list[tuple[int, int]]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable, rng: int | np.random.RandomState | None = None) -> np.ndarray | float | None:
-    conditions = np.unique(tags)
+    conditions = np.sort(np.unique(tags))
     fr_per_burst = []
     tag_per_burst = []
     for i_trial, bur in enumerate(bursts):
