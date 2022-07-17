@@ -188,15 +188,18 @@ def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None,
             res.append((int(above_thresh[left[i]]), int(above_thresh[left[i + 1] - 1])))
     return res, thresh
 
-def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, offset_samples: int = 0) -> list[tuple[int, int]]:
-    if (overlap or offset_samples > 0) and wmin == 0:
-        raise ValueError('if overlap == True or offset_samples > 0, the wmin should be greater than 0 to prevent ZeroDivisionError in downstream processing')
+def combine_burst(burst_list: list[list[tuple[int, int]]], epoch_samples: int, wmin: int | float = 0, overlap: bool = False, sample_on: int = 0, sample_off: int | None = None) -> list[tuple[int, int]]:
+    if (overlap or sample_on > 0 or sample_off is not None) and wmin == 0:
+        raise ValueError('if overlap == True or sample_on > 0 or sample_off is not None, the wmin should be greater than 0 to prevent ZeroDivisionError in downstream processing')
+    if sample_off is None or sample_off > epoch_samples:
+        sample_off = epoch_samples
+    elif sample_off <= sample_on:
+        raise ValueError('sample_off must be greater than sample_on')
     sig = np.zeros(epoch_samples)
     for bur in burst_list:
         for start, end in bur:
             sig[start:end + 1] = sig[start:end + 1] + 1
-    if offset_samples > 0:
-        sig = sig[offset_samples:]
+    sig = sig[sample_on:sample_off]
     if overlap:
         res = burst(sig, wmin, len(burst_list) - 0.5)[0]
     else:
@@ -260,7 +263,7 @@ def concat_burst(bursts: list[list[tuple[int, int]]], poststim_samples: int, off
     return res.flatten()
 
 def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]], active_sd: int | float, silent_sd: int | float, 
-    i_trial: int, offset_samples: int = 0, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
+    i_trial: int, sample_on: int = 0, sample_off: int | None = None, return_duration: bool = False) -> tuple[list[tuple[int, int]], list[tuple[int, int]]] | tuple[int, int]:
     # active state
     burst_list = []
     # silent state
@@ -276,8 +279,8 @@ def active_silent(Sxx: np.ndarray, bands: list[tuple[int | float, int | float]],
         # silent state
         bur_ = burst(sig, wmin, thresh=sig_mean + silent_sd * sig_sd, greater=False)[0]
         burst_list_.append(bur_)
-    active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, offset_samples=offset_samples)
-    silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, offset_samples=offset_samples)
+    active = combine_burst(burst_list, len(sig), wmin=wmin, overlap=False, sample_on=sample_on, sample_off=sample_off)
+    silent = combine_burst(burst_list_, len(sig), wmin=wmin, overlap=True, sample_on=sample_on, sample_off=sample_off)
     if return_duration:
         return state_duration(active), state_duration(silent) # in unit of ms
     return active, silent
