@@ -16,12 +16,49 @@ def find(dir: str, search_for: str) -> list[str]:
                 path.append(os.path.join(root, name))
     return sorted(path)
 
-def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
+def _strobe_to_words(strobes):
+    words = []
+    if (strobes[0] == 4415) or (strobes[0] == 4606) or (strobes[0] == 4159): 
+        for sv in strobes:
+            w = np.binary_repr(~sv, 16)[-8:]
+            words.append(w)
+    elif strobes[0] == -4416:
+        for sv in strobes:
+            w = np.binary_repr(2**15-abs(sv), 16)[-8:]
+            words.append(w)
+    elif strobes[0] == -64:
+        for sv in strobes:
+            if sv < 0:
+                w = np.binary_repr(2**16 - abs(sv), 16)[-8:]
+            else:
+                w = np.binary_repr(sv, 16)[-8:]
+            words.append(w)
+    elif (strobes.min() == 63) or (strobes.min() == 77) or (strobes.min() == 2069) or (strobes.min() == 2071) or (strobes.min() == 2271):
+        for sv in strobes:
+            w = np.binary_repr(~sv, 16)[-8:]
+            words.append(w)
+    else:
+        for sv in strobes:
+            w = np.binary_repr(w, 16)[-8:]
+            words.append(w)
+    return words
+
+def _mark_to_loc(mark):
+    row = int(mark[7:4:-1], 2) - 2
+    col = int(mark[4:1:-1], 2) - 2
+    return f'r{row}_c{col}'
+
+def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame, float]:
     '''
     Input:
-        path: path to event_markers.csv
+        path:
+            path to event_markers.csv
             unit: second
             precision: 30,000 Hz
+            align_to: recording onset
+            or path to event_data.mat
+            unit: second
+            precision: 40,000 Hz
             align_to: recording onset
         session: session to be extracted
 
@@ -30,7 +67,77 @@ def events(path: str, session: int) -> tuple[pd.DataFrame, float]:
             unit: second
             precision: 30,000 Hz
             align_to: recording onset
+            or
+            unit: second
+            precision: 40,000 Hz
+            align_to: recording onset
     '''
+    if old:
+        marks = {
+            "session_on": "11000000",
+            "trial_start": "00000000",
+            "fix_on": "00000001",
+            "target_on": [
+                '01010010', '01110010', '01001010',
+                '01010110',             '01001110',
+                '01010001', '01110001', '01001001',
+            ],
+            "distractor_on": [
+                '10010010', '10110010', '10001010',
+                '10010110',             '10001110',
+                '10010001', '10110001', '10001001',
+            ],
+            "delay_1_on": "00000011",
+            "delay_2_on": "00000100",
+            "response_on": "00000101",
+            "reward_on": "00000110",
+            "manual_reward_on": "00001000",
+            "failure": "00000111",
+            "trial_end": "00100000"
+        }
+        res = {
+            'trial_onset': [], # in unit of sec with 40000 Hz srate
+            'fix_onset': [],
+            'stim_0_onset': [],
+            'stim_0_type': 1, # target => 1 or distractor => 0
+            'stim_0_loc': [],
+            'stim_1_onset': [],
+            'stim_1_type': 0,
+            'stim_1_loc': [],
+        }
+        with h5py.File(path, 'r') as f:
+            strobes = f['sv'][:].flatten().astype(int)
+            timestamps = f['ts'][:].flatten()
+        df = pd.DataFrame({
+            'words': _strobe_to_words(strobes),
+            'timestamps': timestamps
+        })
+        session_on = False
+        for i in range(len(df)):
+            if not session_on:
+                if df.loc[i, 'words'] == marks['session_on']:
+                    session_on = True
+                    session_onset = df.loc[i, 'timestamps']
+                else:
+                    continue
+            if (df.loc[i, 'words'] == marks['reward_on'] and
+                df.loc[i - 1, 'words'] == marks['response_on'] and
+                df.loc[i - 6, 'words'] == marks['fix_on'] and
+                df.loc[i - 7, 'words'] == marks['trial_start']):
+                t_stim2 = df.loc[i - 3, 'timestamps']
+                t_delay1 = df.loc[i - 4, 'timestamps']
+                t_stim1 = df.loc[i - 5, 'timestamps']
+                dt_1 = t_delay1 - t_stim1 # should be around 0.3
+                dt_2 = t_stim2 - t_delay1 # should be around 1
+                if dt_1 > 0.35 or dt_1 < 0.25 or dt_2 > 1.05 or dt_2 < 0.95:
+                    continue
+                res['trial_onset'].append(df.loc[i - 7, 'timestamps'])
+                res['fix_onset'].append(df.loc[i - 6, 'timestamps'])
+                res['stim_0_onset'].append(t_stim1)
+                res['stim_0_loc'].append(_mark_to_loc(df.loc[i - 5, 'words']))
+                res['stim_1_onset'].append(t_stim2)
+                res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 3, 'words']))
+        return pd.DataFrame(res), session_onset
     df = pd.read_csv(path)
     marks = {
         'session_on': 11000000 + int(bin(session)[2:]),
