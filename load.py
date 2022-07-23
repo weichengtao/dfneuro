@@ -243,6 +243,16 @@ def spiketrain(path: list[str] | str, epoch_onsets: np.ndarray | list | tuple | 
         res.append(np.asarray(spikes))
     return res
 
+def lplfp(path: str, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float) -> np.ndarray:
+    if isinstance(epoch_onsets, (int, float)):
+        epoch_onsets = [epoch_onsets]
+    epoch_onsets = np.rint(np.asarray(epoch_onsets)).flatten().astype(int)
+    samples_per_epoch = int(samples_per_epoch)
+    with h5py.File(path, 'r') as f:
+        lfp_data = f['lowpassdata/data/data'][:].flatten().astype(float)
+    res = [lfp_data[onset:onset + samples_per_epoch] for onset in epoch_onsets]
+    return np.asarray(res)
+
 def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, n_jobs: int = 1) -> np.ndarray:
     '''
     Input:
