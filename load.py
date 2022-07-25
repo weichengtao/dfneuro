@@ -137,7 +137,7 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
                 res['stim_0_loc'].append(_mark_to_loc(df.loc[i - 5, 'words']))
                 res['stim_1_onset'].append(t_stim2)
                 res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 3, 'words']))
-        return pd.DataFrame(res), session_onset
+        return pd.DataFrame(res), 0
     df = pd.read_csv(path)
     marks = {
         'session_on': 11000000 + int(bin(session)[2:]),
