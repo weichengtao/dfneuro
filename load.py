@@ -253,7 +253,7 @@ def lplfp(path: str, epoch_onsets: np.ndarray | list | tuple | int | float, samp
     res = [lfp_data[onset:onset + samples_per_epoch] for onset in epoch_onsets]
     return np.asarray(res)
 
-def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, n_jobs: int = 1) -> np.ndarray:
+def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, n_jobs: int = 0) -> np.ndarray:
     '''
     Input:
         path: path to ns5 file
@@ -286,7 +286,7 @@ def rawlfp(path: str, channel: int, epoch_onsets: np.ndarray | list | tuple | in
         from joblib import Parallel, delayed
     except ImportError:
         Parallel = None
-    if Parallel:
+    if Parallel and n_jobs > 0:
         get_data = lambda onset: NSFile(path, proc_single=True).entities[channel - 1].get_analog_data(onset, samples_per_epoch)
         lfp = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_data)(onset) for onset in epoch_onsets)
     else:
