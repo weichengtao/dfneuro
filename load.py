@@ -141,6 +141,7 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
     df = pd.read_csv(path)
     marks = {
         'session_on': 11000000 + int(bin(session)[2:]),
+        'next_session_on': 11000000 + int(bin(session + 1)[2:]),
         'manual_reward_on': 1100,
         'manual_reward_off': 1000,
         'trial_start': 10, # -8
@@ -171,6 +172,8 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
                 session_onset = row['timestamps']
             else:
                 continue
+        if session_on and row['words'] == marks['next_session_on']:
+            break
         if row['words'] == marks['reward_on'] and df.loc[i - 8, 'words'] == marks['trial_start']:
             if df.loc[i - 6, 'words'] not in marks['target_on']:
                 raise ValueError(f'target_on code {df.loc[i - 4, "words"]} cannot be recognized')
