@@ -176,7 +176,7 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
             break
         if row['words'] == marks['reward_on'] and df.loc[i - 8, 'words'] == marks['trial_start']:
             if df.loc[i - 6, 'words'] not in marks['target_on']:
-                raise ValueError(f'target_on code {df.loc[i - 4, "words"]} cannot be recognized')
+                raise ValueError(f'target_on code {df.loc[i - 6, "words"]} at {i - 6} {df.loc[i - 6, "timestamps"]:.3f} cannot be recognized')
             res['trial_onset'].append(df.loc[i - 8, 'timestamps'])
             res['fix_onset'].append(df.loc[i - 7, 'timestamps'])
             res['stim_0_onset'].append(df.loc[i - 6, 'timestamps'])
