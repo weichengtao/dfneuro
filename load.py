@@ -48,7 +48,7 @@ def _mark_to_loc(mark):
     col = int(mark[4:1:-1], 2) - 2
     return f'r{row}_c{col}'
 
-def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame, float]:
+def events(path: str, session: int = 1, is_old_task: bool = False, allow_single_stim: bool = False) -> tuple[pd.DataFrame, float]:
     '''
     Input:
         path:
@@ -72,7 +72,7 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
             precision: 40,000 Hz
             align_to: recording onset
     '''
-    if old:
+    if is_old_task:
         marks = {
             "session_on": "11000000",
             "trial_start": "00000000",
@@ -174,16 +174,25 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
                 continue
         if session_on and row['words'] == marks['next_session_on']:
             break
-        if row['words'] == marks['reward_on'] and df.loc[i - 8, 'words'] == marks['trial_start']:
-            if df.loc[i - 6, 'words'] not in marks['target_on']:
+        if row['words'] == marks['reward_on'] and (df.loc[i - 8, 'words'] == marks['trial_start'] or df.loc[i - 6, 'words'] == marks['trial_start']):
+            if df.loc[i - 6, 'words'] in marks['target_on']:
+                res['trial_onset'].append(df.loc[i - 8, 'timestamps'])
+                res['fix_onset'].append(df.loc[i - 7, 'timestamps'])
+                res['stim_0_onset'].append(df.loc[i - 6, 'timestamps'])
+                res['stim_0_loc'].append(int(str(df.loc[i - 6, 'words'])[-2:], 2))
+                res['stim_1_onset'].append(df.loc[i - 4, 'timestamps'])
+                res['stim_1_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
+                res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
+            elif allow_single_stim and df.loc[i - 4, 'words'] in marks['target_on']:
+                res['trial_onset'].append(df.loc[i - 6, 'timestamps'])
+                res['fix_onset'].append(df.loc[i - 5, 'timestamps'])
+                res['stim_0_onset'].append(df.loc[i - 4, 'timestamps'])
+                res['stim_0_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
+                res['stim_1_onset'].append(None)
+                res['stim_1_type'].append(None)
+                res['stim_1_loc'].append(None)
+            else:
                 raise ValueError(f'target_on code {df.loc[i - 6, "words"]} at {i - 6} {df.loc[i - 6, "timestamps"]:.3f} cannot be recognized')
-            res['trial_onset'].append(df.loc[i - 8, 'timestamps'])
-            res['fix_onset'].append(df.loc[i - 7, 'timestamps'])
-            res['stim_0_onset'].append(df.loc[i - 6, 'timestamps'])
-            res['stim_0_loc'].append(int(str(df.loc[i - 6, 'words'])[-2:], 2))
-            res['stim_1_onset'].append(df.loc[i - 4, 'timestamps'])
-            res['stim_1_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
-            res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
     return pd.DataFrame(res), session_onset
 
 def spiketrain(path: list[str] | str, epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
