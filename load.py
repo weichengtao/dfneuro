@@ -48,7 +48,7 @@ def _mark_to_loc(mark):
     col = int(mark[4:1:-1], 2) - 2
     return f'r{row}_c{col}'
 
-def events(path: str, session: int = 1, is_old_task: bool = False, allow_single_stim: bool = False) -> tuple[pd.DataFrame, float]:
+def events(path: str, session: int = 1, is_old_task: bool = False, allow_single_stim: bool = False, allow_code_mismatch: bool = False) -> tuple[pd.DataFrame, float]:
     '''
     Input:
         path:
@@ -191,7 +191,7 @@ def events(path: str, session: int = 1, is_old_task: bool = False, allow_single_
                 res['stim_1_onset'].append(None)
                 res['stim_1_type'].append(None)
                 res['stim_1_loc'].append(None)
-            else:
+            elif not allow_code_mismatch:
                 raise ValueError(f'target_on code {df.loc[i - 6, "words"]} at {i - 6} {df.loc[i - 6, "timestamps"]:.3f} cannot be recognized')
     return pd.DataFrame(res), session_onset
 
