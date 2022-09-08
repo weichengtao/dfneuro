@@ -43,12 +43,23 @@ def _strobe_to_words(strobes):
             words.append(w)
     return words
 
-def _mark_to_loc(mark):
-    row = int(mark[7:4:-1], 2) - 2
-    col = int(mark[4:1:-1], 2) - 2
+def _mark_to_loc(mark, is_old_task: bool = False):
+    if is_old_task:
+        row = int(mark[7:4:-1], 2) - 2
+        col = int(mark[4:1:-1], 2) - 2
+    else:
+        i = int(str(mark)[-2:], 2)
+        if i == 0:
+            row, col = 2, 0
+        elif i == 1:
+            row, col = 2, 2
+        elif i == 2:
+            row, col = 0, 0
+        elif i == 3:
+            row, col = 0, 2
     return f'r{row}_c{col}'
 
-def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame, float]:
+def events(path: str, session: int = 1, is_old_task: bool = False, allow_single_stim: bool = False, allow_code_mismatch: bool = False) -> tuple[pd.DataFrame, float]:
     '''
     Input:
         path:
@@ -72,7 +83,7 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
             precision: 40,000 Hz
             align_to: recording onset
     '''
-    if old:
+    if is_old_task:
         marks = {
             "session_on": "11000000",
             "trial_start": "00000000",
@@ -98,12 +109,12 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
         res = {
             'trial_onset': [], # in unit of sec with 40000 Hz srate
             'fix_onset': [],
-            'stim_0_onset': [],
-            'stim_0_type': 1, # target => 1 or distractor => 0
-            'stim_0_loc': [],
             'stim_1_onset': [],
-            'stim_1_type': 0,
+            'stim_1_type': 1, # target => 1 or distractor => 0
             'stim_1_loc': [],
+            'stim_2_onset': [],
+            'stim_2_type': 0,
+            'stim_2_loc': [],
         }
         with h5py.File(path, 'r') as f:
             strobes = f['sv'][:].flatten().astype(int)
@@ -133,10 +144,10 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
                     continue
                 res['trial_onset'].append(df.loc[i - 7, 'timestamps'])
                 res['fix_onset'].append(df.loc[i - 6, 'timestamps'])
-                res['stim_0_onset'].append(t_stim1)
-                res['stim_0_loc'].append(_mark_to_loc(df.loc[i - 5, 'words']))
-                res['stim_1_onset'].append(t_stim2)
-                res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 3, 'words']))
+                res['stim_1_onset'].append(t_stim1)
+                res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 5, 'words'], True))
+                res['stim_2_onset'].append(t_stim2)
+                res['stim_2_loc'].append(_mark_to_loc(df.loc[i - 3, 'words'], True))
         return pd.DataFrame(res), 0
     df = pd.read_csv(path)
     marks = {
@@ -157,12 +168,12 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
     res = {
         'trial_onset': [], # in unit of sec with 30000 Hz srate
         'fix_onset': [],
-        'stim_0_onset': [],
-        'stim_0_type': 1,
-        'stim_0_loc': [], # bottom left => 0, bottom right => 1, top left => 2, top right => 3
         'stim_1_onset': [],
-        'stim_1_type': [], # target => 1 or distractor => 0
-        'stim_1_loc': [],
+        'stim_1_type': 1,
+        'stim_1_loc': [], # bottom left => 0, bottom right => 1, top left => 2, top right => 3
+        'stim_2_onset': [],
+        'stim_2_type': [], # target => 1 or distractor => 0
+        'stim_2_loc': [],
     }
     session_on = False
     for i, row in df.iterrows():
@@ -174,16 +185,25 @@ def events(path: str, session: int = 1, old: bool = False) -> tuple[pd.DataFrame
                 continue
         if session_on and row['words'] == marks['next_session_on']:
             break
-        if row['words'] == marks['reward_on'] and df.loc[i - 8, 'words'] == marks['trial_start']:
-            if df.loc[i - 6, 'words'] not in marks['target_on']:
+        if row['words'] == marks['reward_on'] and (df.loc[i - 8, 'words'] == marks['trial_start'] or df.loc[i - 6, 'words'] == marks['trial_start']):
+            if df.loc[i - 6, 'words'] in marks['target_on']:
+                res['trial_onset'].append(df.loc[i - 8, 'timestamps'])
+                res['fix_onset'].append(df.loc[i - 7, 'timestamps'])
+                res['stim_1_onset'].append(df.loc[i - 6, 'timestamps'])
+                res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 6, 'words']))
+                res['stim_2_onset'].append(df.loc[i - 4, 'timestamps'])
+                res['stim_2_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
+                res['stim_2_loc'].append(_mark_to_loc(df.loc[i - 4, 'words']))
+            elif allow_single_stim and df.loc[i - 4, 'words'] in marks['target_on']:
+                res['trial_onset'].append(df.loc[i - 6, 'timestamps'])
+                res['fix_onset'].append(df.loc[i - 5, 'timestamps'])
+                res['stim_1_onset'].append(df.loc[i - 4, 'timestamps'])
+                res['stim_1_loc'].append(_mark_to_loc(df.loc[i - 4, 'words']))
+                res['stim_2_onset'].append(None)
+                res['stim_2_type'].append(None)
+                res['stim_2_loc'].append(None)
+            elif not allow_code_mismatch:
                 raise ValueError(f'target_on code {df.loc[i - 6, "words"]} at {i - 6} {df.loc[i - 6, "timestamps"]:.3f} cannot be recognized')
-            res['trial_onset'].append(df.loc[i - 8, 'timestamps'])
-            res['fix_onset'].append(df.loc[i - 7, 'timestamps'])
-            res['stim_0_onset'].append(df.loc[i - 6, 'timestamps'])
-            res['stim_0_loc'].append(int(str(df.loc[i - 6, 'words'])[-2:], 2))
-            res['stim_1_onset'].append(df.loc[i - 4, 'timestamps'])
-            res['stim_1_type'].append(len(str(df.loc[i - 4, 'words'])) - 7)
-            res['stim_1_loc'].append(int(str(df.loc[i - 4, 'words'])[-2:], 2))
     return pd.DataFrame(res), session_onset
 
 def spiketrain(path: list[str] | str, epoch_onsets: np.ndarray | list | tuple | int | float, ms_per_epoch: int | float) -> list[np.ndarray]:
