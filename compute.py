@@ -9,6 +9,9 @@ from sklearn.svm import LinearSVC
 from sklearn.utils._testing import ignore_warnings
 from sklearn.exceptions import ConvergenceWarning
 
+def nearest_index(arr, x):
+    return np.argmin((np.asarray(arr) - x) ** 2)
+
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
     Input:
