@@ -146,7 +146,7 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
 def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: int | float = 0.4) -> bool:
     near = lambda arr, x: np.argmin((arr - x) ** 2) # find nearest index of x in arr
     t_ = t - pre_duration # t realigned to stimulus onset
-    gmin, gmax = 50, 120
+    gmin, gmax = 40, 120
     pre = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, -0.2):near(t_, 0)].mean(axis=(1, 2))
     post = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, 0.1):near(t_, 0.3)].mean(axis=(1, 2))
     _, p = stats.wilcoxon(pre, post, alternative='less')
