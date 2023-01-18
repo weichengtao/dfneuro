@@ -301,7 +301,7 @@ def pev(samples, tags, conditions) -> float | None:
     dfb = len(conditions) - 1
     mse = sse / dfe
     omega_squared = (ssb - dfb * mse) / (mse + sst)
-    return omega_squared
+    return omega_squared * 100
 
 @ignore_warnings(category=ConvergenceWarning)
 def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
@@ -317,7 +317,7 @@ def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_job
     for i in range(n_repeats):
         scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
         res.extend(scores)
-    return np.asarray(res)
+    return np.asarray(res) * 100
 
 def burst_info(bursts: list[list[tuple[int, int]]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable, rng: int | np.random.RandomState | None = None) -> np.ndarray | float | None:
     conditions = np.sort(np.unique(tags))
