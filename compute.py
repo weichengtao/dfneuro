@@ -12,6 +12,9 @@ from sklearn.exceptions import ConvergenceWarning
 def nearest_index(arr, x):
     return np.argmin((np.asarray(arr) - x) ** 2)
 
+def gaussian_kernel(M=51, sigma=7):
+    return signal.windows.gaussian(M, sigma) / (sigma * np.sqrt(2 * np.pi))
+
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
     Input:
