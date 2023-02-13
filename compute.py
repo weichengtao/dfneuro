@@ -307,7 +307,7 @@ def pev(samples, tags, conditions) -> float | None:
     return omega_squared * 100
 
 @ignore_warnings(category=ConvergenceWarning)
-def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+def acc(samples, tags, conditions, n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
     X = np.asarray(samples)[:, np.newaxis]
     le = LabelEncoder()
     le.fit(conditions)
@@ -321,6 +321,22 @@ def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_job
         scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
         res.extend(scores)
     return np.asarray(res) * 100
+
+@ignore_warnings(category=ConvergenceWarning)
+def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+    X = np.asarray(samples)[:, np.newaxis]
+    le = LabelEncoder()
+    le.fit(conditions)
+    y = le.transform(tags)
+    if isinstance(rng, int):
+        rng = np.random.RandomState(rng) # splits are different across repeats
+    clf = make_pipeline(StandardScaler(), LinearSVC(dual=False)) # prefer dual=False when n_samples > n_features
+    cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
+    res = []
+    for i in range(n_repeats):
+        scores = cross_val_score(clf, X, y, scoring=average, cv=cv, n_jobs=n_jobs)
+        res.extend(scores)
+    return np.asarray(res)
 
 def burst_info(bursts: list[list[tuple[int, int]]], spikes: list[np.ndarray], tags: np.ndarray, ifunc: Callable, rng: int | np.random.RandomState | None = None) -> np.ndarray | float | None:
     conditions = np.sort(np.unique(tags))
