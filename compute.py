@@ -15,6 +15,22 @@ def nearest_index(arr, x):
 def gaussian_kernel(M=51, sigma=7):
     return signal.windows.gaussian(M, sigma) / (sigma * np.sqrt(2 * np.pi))
 
+@njit(error_model="numpy")
+def ff_bootstrap(n_spike: np.ndarray, n_bootstrap: int, n_trial: int) -> np.ndarray:
+    '''
+    Input:
+        n_spike: n_spike for each trial
+        n_bootstrap: repeats of bootstrap
+        n_trial: number of trials sampled with replacement from n_spike
+    Output:
+        ff: fano factor distribution
+    '''
+    ff = np.zeros(n_bootstrap)
+    for i in range(n_bootstrap):
+        n_spike_bootstrap = np.random.choice(n_spike, n_trial, replace=True)
+        ff[i] = n_spike_bootstrap.var() / n_spike_bootstrap.mean()
+    return ff
+
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
     Input:
