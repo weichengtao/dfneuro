@@ -171,6 +171,98 @@ def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: in
     _, p = stats.wilcoxon(pre, post, alternative='less')
     return p < 0.05
 
+@njit
+def bursts_jit(sig: np.ndarray, min_window_width: int | float, sig_threshold: int | float, greater_than: bool = True):
+    if greater_than:
+        above_thresh = np.nonzero(sig > sig_threshold)[0]
+    else:
+        above_thresh = np.nonzero(sig < sig_threshold)[0]
+    above_thresh_extended = np.zeros(len(above_thresh) + 2).astype(np.int64)
+    above_thresh_extended[0] = -2
+    above_thresh_extended[1:-1] = above_thresh
+    above_thresh_extended[-1] = len(sig) + 1
+    left_idx = np.nonzero(np.diff(above_thresh_extended) > 1)[0]
+    right_idx = left_idx - 1
+    left_idx = left_idx[:-1]
+    right_idx = right_idx[1:]
+    res = np.zeros((len(left_idx), 3)).astype(np.int64)
+    for i in range(len(left_idx)):
+        left = above_thresh[left_idx[i]]
+        right = above_thresh[right_idx[i]]
+        w = right - left + 1
+        res[i] = left, right, w
+    return res[res[:, -1] > min_window_width]
+
+def bursts_vectorized(sig:np.ndarray, min_window_width: np.ndarray, sig_threshold: np.ndarray, greater_than: bool = True):
+    '''
+    Input:
+        sig:
+            shape: trial, frequency, time
+        min_window_width:
+            shape: trial, frequency
+        sig_threshold:
+            shape: trial, frequency
+    Output:
+        res:
+            shape: trial, frequency
+    '''
+    shape = sig.shape
+    sig = sig.reshape((-1, shape[-1]))
+    min_window_width = min_window_width.ravel()
+    sig_threshold = sig_threshold.ravel()
+    result = np.empty(shape[:-1], dtype=object)
+    res = result.ravel()
+    for i, s in enumerate(sig):
+        res[i] = bursts_jit(s, min_window_width[i], sig_threshold[i], greater_than)
+    return result
+
+def bursts_combined(bursts, sig_width: int, min_window_width: int | float, mode: str):
+    '''
+    Input:
+        bursts:
+            shape: trial, frequency, (burst, 3)
+        sig_width: 
+            should be Sxx.shape[-1]
+        min_window_width
+            such as 0 for mode == "any" or 25 for mode == "all"
+        mode:
+            must be "any" or "all" 
+    Output:
+        res:
+            shape: trial, (burst, 3)
+    '''
+    n_trial, n_frequency = bursts.shape
+    res = np.empty(n_trial, dtype=object)
+    for i, bursts_per_trial in enumerate(bursts):
+        sig = np.zeros(sig_width)
+        for bursts_per_frequency in bursts_per_trial:
+            for left, right, _ in bursts_per_frequency:
+                sig[left:right + 1] = sig[left:right + 1] + 1
+        if mode == 'any':
+            res[i] = bursts_jit(sig, min_window_width, 0.5)
+        elif mode =='all':
+            res[i] = bursts_jit(sig, min_window_width, n_frequency - 0.5)
+        else:
+            raise ValueError(f'mode should be either "any" or "all", however "{mode}" is provided')
+    return res
+
+def burst_rate(bursts, sig_width: int):
+    '''
+    Input:
+        bursts:
+            shape: trial, (burst, 3)
+    Output:
+        res:
+            shape: time,
+    '''
+    n_trial = len(bursts)
+    burst_matrix = np.full((n_trial, sig_width), 0, dtype=np.int8)
+    for i, bursts_per_trial in enumerate(bursts):
+        for left, right, _ in bursts_per_trial:
+            burst_matrix[i, left:right + 1] = 1
+    res = burst_matrix.mean(axis=0)
+    return res
+
 def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None, greater: bool = True) -> tuple[list[tuple[int, int]], float]:
     '''
     Input:
