@@ -460,3 +460,77 @@ def burst_info(bursts: list[list[tuple[int, int]]], spikes: list[np.ndarray], ta
         return ifunc(fr_per_burst, tag_per_burst, conditions, rng=rng)
     else:
         return ifunc(fr_per_burst, tag_per_burst, conditions)
+
+@njit
+def spike_triggered_sig(spikes: np.ndarray, sig: np.ndarray, half_width: int) -> np.ndarray:
+    '''
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    n_spike = len(spikes)
+    width = half_width * 2
+    res = np.zeros((n_spike, *sig.shape[1:-1], width))
+    for i in range(n_spike):
+        i_trial, onset = spikes[i]
+        res[i] = sig[i_trial, ..., onset:onset + width]
+    return res
+
+
+@njit
+def _spike_triggered_average(spikes: np.ndarray, sig: np.ndarray, half_width: int, return_std: bool = False):
+    '''
+    To save the RAM usage, compute the mean (and std) on the fly
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    n_spike = len(spikes)
+    width = half_width * 2
+    E_x = np.zeros((*sig.shape[1:-1], width))
+    if return_std:
+        E_x2 = np.zeros_like(E_x)
+    for i in range(n_spike):
+        i_trial, onset = spikes[i]
+        x = sig[i_trial, ..., onset:onset + width]
+        E_x += x
+        if return_std:
+            E_x2 += x ** 2
+    E_x /= n_spike
+    if return_std:
+        E_x2 /= n_spike
+        _std = np.sqrt(E_x2 - E_x ** 2)
+        return E_x, _std
+    return E_x, E_x
+
+def spike_triggered_average(spikes: np.ndarray, sig: np.ndarray, half_width: int, return_std: bool = False):
+    '''
+    To save the RAM usage, compute the mean (and std) on the fly
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    if return_std:
+        return _spike_triggered_average(spikes, sig, half_width, return_std)
+    return _spike_triggered_average(spikes, sig, half_width, return_std)[0]
