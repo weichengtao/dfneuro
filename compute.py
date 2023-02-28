@@ -246,7 +246,7 @@ def bursts_combined(bursts, sig_width: int, min_window_width: int | float, mode:
             raise ValueError(f'mode should be either "any" or "all", however "{mode}" is provided')
     return res
 
-def burst_rate(bursts, sig_width: int):
+def burst_rate(bursts, sig_width: int, return_burst_matrix: bool = False):
     '''
     Input:
         bursts:
@@ -261,6 +261,8 @@ def burst_rate(bursts, sig_width: int):
         for left, right, _ in bursts_per_trial:
             burst_matrix[i, left:right + 1] = 1
     res = burst_matrix.mean(axis=0)
+    if return_burst_matrix:
+        return res, burst_matrix
     return res
 
 def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None, greater: bool = True) -> tuple[list[tuple[int, int]], float]:
