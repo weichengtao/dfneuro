@@ -1,6 +1,7 @@
 from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from joblib import Parallel, delayed
 from numba import njit
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import make_pipeline
@@ -136,31 +137,17 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
             unit: miuV^2/Hz
             align_to: epoch onset
     '''
-    try:
-        from joblib import Parallel, delayed
-    except ImportError:
-        Parallel = None
     M = int(fs * window_width)
     NW = window_width * half_bandwidth
     K = int(np.floor(NW * 2) - 1)
     dpss_windows = signal.windows.dpss(M, NW, K, sym=True, norm=2, return_ratios=False)
     noverlap = int(M - fs / 1000)
     fmax_exclusive = fmax + 1
-    res = []
-    for i in range(len(lfp)):
-        epoch_lfp = lfp[i]
-        if Parallel:
-            get_Sxx = lambda window: signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
-            epoch_Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_Sxx)(window) for window in dpss_windows)
-        else:
-            epoch_Sxx = []
-            for window in dpss_windows:
-                Sxx = signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
-                epoch_Sxx.append(Sxx)
-        res.append(np.asarray(epoch_Sxx).mean(axis=0))
+    get_epoch_Sxx = lambda epoch_lfp: np.asarray([signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive] for window in dpss_windows]).mean(axis=0)
+    Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_epoch_Sxx)(epoch_lfp) for epoch_lfp in lfp)
     f, t = signal.spectrogram(lfp[0], fs, dpss_windows[0], M, noverlap, fs)[:-1]
     f = f[fmin:fmax_exclusive]
-    return f, t, np.asarray(res)
+    return f, t, np.asarray(Sxx)
 
 def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: int | float = 0.4) -> bool:
     near = lambda arr, x: np.argmin((arr - x) ** 2) # find nearest index of x in arr
