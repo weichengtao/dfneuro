@@ -1,6 +1,7 @@
 from typing import Callable
 import numpy as np
 from scipy import signal, stats
+from joblib import Parallel, delayed
 from numba import njit
 from sklearn.model_selection import cross_val_score, StratifiedKFold
 from sklearn.pipeline import make_pipeline
@@ -11,6 +12,25 @@ from sklearn.exceptions import ConvergenceWarning
 
 def nearest_index(arr, x):
     return np.argmin((np.asarray(arr) - x) ** 2)
+
+def gaussian_kernel(M=51, sigma=7):
+    return signal.windows.gaussian(M, sigma) / (sigma * np.sqrt(2 * np.pi))
+
+@njit(error_model="numpy")
+def ff_bootstrap(n_spike: np.ndarray, n_bootstrap: int, n_trial: int) -> np.ndarray:
+    '''
+    Input:
+        n_spike: n_spike for each trial
+        n_bootstrap: repeats of bootstrap
+        n_trial: number of trials sampled with replacement from n_spike
+    Output:
+        ff: fano factor distribution
+    '''
+    ff = np.zeros(n_bootstrap)
+    for i in range(n_bootstrap):
+        n_spike_bootstrap = np.random.choice(n_spike, n_trial, replace=True)
+        ff[i] = n_spike_bootstrap.var() / n_spike_bootstrap.mean()
+    return ff
 
 def interpolation(lfp: np.ndarray, spikes: list[np.ndarray], onset: int | float, duration: int | float, u: int = 30, copy: bool = False) -> np.ndarray:
     '''
@@ -117,40 +137,117 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
             unit: miuV^2/Hz
             align_to: epoch onset
     '''
-    try:
-        from joblib import Parallel, delayed
-    except ImportError:
-        Parallel = None
     M = int(fs * window_width)
     NW = window_width * half_bandwidth
     K = int(np.floor(NW * 2) - 1)
     dpss_windows = signal.windows.dpss(M, NW, K, sym=True, norm=2, return_ratios=False)
     noverlap = int(M - fs / 1000)
     fmax_exclusive = fmax + 1
-    res = []
-    for i in range(len(lfp)):
-        epoch_lfp = lfp[i]
-        if Parallel:
-            get_Sxx = lambda window: signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
-            epoch_Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_Sxx)(window) for window in dpss_windows)
-        else:
-            epoch_Sxx = []
-            for window in dpss_windows:
-                Sxx = signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive]
-                epoch_Sxx.append(Sxx)
-        res.append(np.asarray(epoch_Sxx).mean(axis=0))
+    get_epoch_Sxx = lambda epoch_lfp: np.asarray([signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive] for window in dpss_windows]).mean(axis=0)
+    Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_epoch_Sxx)(epoch_lfp) for epoch_lfp in lfp)
     f, t = signal.spectrogram(lfp[0], fs, dpss_windows[0], M, noverlap, fs)[:-1]
     f = f[fmin:fmax_exclusive]
-    return f, t, np.asarray(res)
+    return f, t, np.asarray(Sxx)
 
 def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: int | float = 0.4) -> bool:
     near = lambda arr, x: np.argmin((arr - x) ** 2) # find nearest index of x in arr
     t_ = t - pre_duration # t realigned to stimulus onset
-    gmin, gmax = 50, 120
+    gmin, gmax = 40, 120
     pre = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, -0.2):near(t_, 0)].mean(axis=(1, 2))
     post = Sxx[:, near(f, gmin):near(f, gmax) + 1, near(t_, 0.1):near(t_, 0.3)].mean(axis=(1, 2))
     _, p = stats.wilcoxon(pre, post, alternative='less')
     return p < 0.05
+
+@njit
+def bursts_jit(sig: np.ndarray, min_window_width: int | float, sig_threshold: int | float | np.ndarray, greater_than: bool = True):
+    if greater_than:
+        above_thresh = np.nonzero(sig > sig_threshold)[0]
+    else:
+        above_thresh = np.nonzero(sig < sig_threshold)[0]
+    above_thresh_extended = np.zeros(len(above_thresh) + 2).astype(np.int64)
+    above_thresh_extended[0] = -2
+    above_thresh_extended[1:-1] = above_thresh
+    above_thresh_extended[-1] = len(sig) + 1
+    left_idx = np.nonzero(np.diff(above_thresh_extended) > 1)[0]
+    right_idx = left_idx - 1
+    left_idx = left_idx[:-1]
+    right_idx = right_idx[1:]
+    res = np.zeros((len(left_idx), 3)).astype(np.int64)
+    for i in range(len(left_idx)):
+        left = above_thresh[left_idx[i]]
+        right = above_thresh[right_idx[i]]
+        w = right - left + 1
+        res[i] = left, right, w
+    return res[res[:, -1] > min_window_width]
+
+def bursts_vectorized(sig:np.ndarray, min_window_width: np.ndarray, sig_threshold: np.ndarray, greater_than: bool = True):
+    '''
+    Input:
+        sig:
+            shape: trial, frequency, time
+        min_window_width:
+            shape: trial, frequency
+        sig_threshold:
+            shape: trial, frequency | trial, frequency, time
+    Output:
+        res:
+            shape: trial, frequency
+    '''
+    n_trial, n_freq, _ = sig.shape
+    res = np.empty((n_trial, n_freq), dtype=object)
+    for i in range(n_trial):
+        for j in range(n_freq):
+            res[i, j] = bursts_jit(sig[i, j], min_window_width[i, j], sig_threshold[i, j], greater_than)
+    return res
+
+def bursts_combined(bursts, sig_width: int, min_window_width: int | float, mode: str):
+    '''
+    Input:
+        bursts:
+            shape: trial, frequency, (burst, 3)
+        sig_width: 
+            should be Sxx.shape[-1]
+        min_window_width
+            such as 0 for mode == "any" or 25 for mode == "all"
+        mode:
+            must be "any" or "all" 
+    Output:
+        res:
+            shape: trial, (burst, 3)
+    '''
+    n_trial, n_frequency = bursts.shape
+    res = np.empty(n_trial, dtype=object)
+    for i, bursts_per_trial in enumerate(bursts):
+        sig = np.zeros(sig_width)
+        for bursts_per_frequency in bursts_per_trial:
+            for left, right, _ in bursts_per_frequency:
+                sig[left:right + 1] = sig[left:right + 1] + 1
+        if mode == 'any':
+            res[i] = bursts_jit(sig, min_window_width, 0.5)
+        elif mode =='all':
+            res[i] = bursts_jit(sig, min_window_width, n_frequency - 0.5)
+        else:
+            raise ValueError(f'mode should be either "any" or "all", however "{mode}" is provided')
+    return res
+
+def burst_rate(bursts, sig_width: int, return_burst_matrix: bool = False):
+    '''
+    Input:
+        bursts:
+            shape: trial, (burst, 3)
+    Output:
+        res:
+            shape: time,
+    '''
+    n_trial = len(bursts)
+    burst_matrix = np.full((n_trial, sig_width), 0, dtype=np.int8)
+    for i, bursts_per_trial in enumerate(bursts):
+        for left, right, _ in bursts_per_trial:
+            burst_matrix[i, left:right + 1] = 1
+    res = burst_matrix.mean(axis=0)
+    if return_burst_matrix:
+        return res, burst_matrix
+    return res
 
 def burst(sig: np.ndarray, wmin: int | float, thresh: int | float | None = None, greater: bool = True) -> tuple[list[tuple[int, int]], float]:
     '''
@@ -301,10 +398,10 @@ def pev(samples, tags, conditions) -> float | None:
     dfb = len(conditions) - 1
     mse = sse / dfe
     omega_squared = (ssb - dfb * mse) / (mse + sst)
-    return omega_squared
+    return omega_squared * 100
 
 @ignore_warnings(category=ConvergenceWarning)
-def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+def acc(samples, tags, conditions, n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
     X = np.asarray(samples)[:, np.newaxis]
     le = LabelEncoder()
     le.fit(conditions)
@@ -316,6 +413,22 @@ def acc(samples, tags, conditions, n_splits: int = 4, n_repeats: int = 50, n_job
     res = []
     for i in range(n_repeats):
         scores = cross_val_score(clf, X, y, cv=cv, n_jobs=n_jobs)
+        res.extend(scores)
+    return np.asarray(res) * 100
+
+@ignore_warnings(category=ConvergenceWarning)
+def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+    X = np.asarray(samples)[:, np.newaxis]
+    le = LabelEncoder()
+    le.fit(conditions)
+    y = le.transform(tags)
+    if isinstance(rng, int):
+        rng = np.random.RandomState(rng) # splits are different across repeats
+    clf = make_pipeline(StandardScaler(), LinearSVC(dual=False)) # prefer dual=False when n_samples > n_features
+    cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
+    res = []
+    for i in range(n_repeats):
+        scores = cross_val_score(clf, X, y, scoring=average, cv=cv, n_jobs=n_jobs)
         res.extend(scores)
     return np.asarray(res)
 
@@ -333,3 +446,77 @@ def burst_info(bursts: list[list[tuple[int, int]]], spikes: list[np.ndarray], ta
         return ifunc(fr_per_burst, tag_per_burst, conditions, rng=rng)
     else:
         return ifunc(fr_per_burst, tag_per_burst, conditions)
+
+@njit
+def spike_triggered_sig(spikes: np.ndarray, sig: np.ndarray, half_width: int) -> np.ndarray:
+    '''
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    n_spike = len(spikes)
+    width = half_width * 2
+    res = np.zeros((n_spike, *sig.shape[1:-1], width))
+    for i in range(n_spike):
+        i_trial, onset = spikes[i]
+        res[i] = sig[i_trial, ..., onset:onset + width]
+    return res
+
+
+@njit
+def _spike_triggered_average(spikes: np.ndarray, sig: np.ndarray, half_width: int, return_std: bool = False):
+    '''
+    To save the RAM usage, compute the mean (and std) on the fly
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    n_spike = len(spikes)
+    width = half_width * 2
+    E_x = np.zeros((*sig.shape[1:-1], width))
+    if return_std:
+        E_x2 = np.zeros_like(E_x)
+    for i in range(n_spike):
+        i_trial, onset = spikes[i]
+        x = sig[i_trial, ..., onset:onset + width]
+        E_x += x
+        if return_std:
+            E_x2 += x ** 2
+    E_x /= n_spike
+    if return_std:
+        E_x2 /= n_spike
+        _std = np.sqrt(E_x2 - E_x ** 2)
+        return E_x, _std
+    return E_x, E_x
+
+def spike_triggered_average(spikes: np.ndarray, sig: np.ndarray, half_width: int, return_std: bool = False):
+    '''
+    To save the RAM usage, compute the mean (and std) on the fly
+    Input:
+        spikes:
+            aligned to epoch_onset
+            shape: spike, 2
+        sig:
+            aligned to epoch_onset - half_width
+            shape: trial, ..., time
+    Output:
+        res:
+            shape: spike, half_width * 2
+    '''
+    if return_std:
+        return _spike_triggered_average(spikes, sig, half_width, return_std)
+    return _spike_triggered_average(spikes, sig, half_width, return_std)[0]

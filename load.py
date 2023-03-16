@@ -1,4 +1,4 @@
-import os
+import os, pickle
 import numpy as np
 import pandas as pd
 from scipy import io
@@ -266,13 +266,17 @@ def spiketrain(path: list[str] | str, epoch_onsets: np.ndarray | list | tuple | 
         res.append(np.asarray(spikes))
     return res
 
-def lplfp(path: str, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float) -> np.ndarray:
+def lplfp(path: str, epoch_onsets: np.ndarray | list | tuple | int | float, samples_per_epoch: int | float, is_pickle: bool = False) -> np.ndarray:
     if isinstance(epoch_onsets, (int, float)):
         epoch_onsets = [epoch_onsets]
     epoch_onsets = np.rint(np.asarray(epoch_onsets)).flatten().astype(int)
     samples_per_epoch = int(samples_per_epoch)
-    with h5py.File(path, 'r') as f:
-        lfp_data = f['lowpassdata/data/data'][:].flatten().astype(float)
+    if is_pickle:
+        with open(path, 'rb') as f:
+            lfp_data = pickle.load(f)
+    else:
+        with h5py.File(path, 'r') as f:
+            lfp_data = f['lowpassdata/data/data'][:].flatten().astype(float)
     res = [lfp_data[onset:onset + samples_per_epoch] for onset in epoch_onsets]
     return np.asarray(res)
 
