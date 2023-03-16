@@ -159,7 +159,7 @@ def is_gamma_mod(f: np.ndarray, t: np.ndarray, Sxx: np.ndarray, pre_duration: in
     return p < 0.05
 
 @njit
-def bursts_jit(sig: np.ndarray, min_window_width: int | float, sig_threshold: int | float, greater_than: bool = True):
+def bursts_jit(sig: np.ndarray, min_window_width: int | float, sig_threshold: int | float | np.ndarray, greater_than: bool = True):
     if greater_than:
         above_thresh = np.nonzero(sig > sig_threshold)[0]
     else:
@@ -188,20 +188,17 @@ def bursts_vectorized(sig:np.ndarray, min_window_width: np.ndarray, sig_threshol
         min_window_width:
             shape: trial, frequency
         sig_threshold:
-            shape: trial, frequency
+            shape: trial, frequency | trial, frequency, time
     Output:
         res:
             shape: trial, frequency
     '''
-    shape = sig.shape
-    sig = sig.reshape((-1, shape[-1]))
-    min_window_width = min_window_width.ravel()
-    sig_threshold = sig_threshold.ravel()
-    result = np.empty(shape[:-1], dtype=object)
-    res = result.ravel()
-    for i, s in enumerate(sig):
-        res[i] = bursts_jit(s, min_window_width[i], sig_threshold[i], greater_than)
-    return result
+    n_trial, n_freq, _ = sig.shape
+    res = np.empty((n_trial, n_freq), dtype=object)
+    for i in range(n_trial):
+        for j in range(n_freq):
+            res[i, j] = bursts_jit(sig[i, j], min_window_width[i, j], sig_threshold[i, j], greater_than)
+    return res
 
 def bursts_combined(bursts, sig_width: int, min_window_width: int | float, mode: str):
     '''
