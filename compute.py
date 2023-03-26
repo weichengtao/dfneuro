@@ -140,10 +140,11 @@ def multitaper_spectrogram(lfp: np.ndarray, fmin: int, fmax: int, window_width: 
     M = int(fs * window_width)
     NW = window_width * half_bandwidth
     K = int(np.floor(NW * 2) - 1)
-    dpss_windows = signal.windows.dpss(M, NW, K, sym=True, norm=2, return_ratios=False)
+    dpss_windows, eigen_values = signal.windows.dpss(M, NW, K, sym=False, norm=2, return_ratios=True)
+    weights = np.array([eigen_value / (i + 1) for i, eigen_value in enumerate(eigen_values)])[:, None, None]
     noverlap = int(M - fs / 1000)
     fmax_exclusive = fmax + 1
-    get_epoch_Sxx = lambda epoch_lfp: np.asarray([signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive] for window in dpss_windows]).mean(axis=0)
+    get_epoch_Sxx = lambda epoch_lfp: np.mean(np.asarray([signal.spectrogram(epoch_lfp, fs, window, M, noverlap, fs)[-1][fmin:fmax_exclusive] for window in dpss_windows]) * weights, axis=0)
     Sxx = Parallel(n_jobs=n_jobs, verbose=0)(delayed(get_epoch_Sxx)(epoch_lfp) for epoch_lfp in lfp)
     f, t = signal.spectrogram(lfp[0], fs, dpss_windows[0], M, noverlap, fs)[:-1]
     f = f[fmin:fmax_exclusive]
