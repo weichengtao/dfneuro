@@ -13,6 +13,11 @@ from sklearn.exceptions import ConvergenceWarning
 def nearest_index(arr, x):
     return np.argmin((np.asarray(arr) - x) ** 2)
 
+def onset_offset_index(arr, onset, offset):
+    arr = np.asarray(arr)
+    idx = np.where((arr >= onset) & (arr < offset))[0]
+    return idx[0], idx[-1] + 1
+
 def gaussian_kernel(M=51, sigma=7):
     return signal.windows.gaussian(M, sigma) / (sigma * np.sqrt(2 * np.pi))
 
