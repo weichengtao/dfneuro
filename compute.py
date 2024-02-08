@@ -423,18 +423,22 @@ def acc(samples, tags, conditions, n_splits: int = 5, n_repeats: int = 10, n_job
     return np.asarray(res) * 100
 
 @ignore_warnings(category=ConvergenceWarning)
-def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, compute_null: bool = False, rng: int | np.random.RandomState | None = None) -> np.ndarray:
     X = np.asarray(samples)[:, np.newaxis]
     le = LabelEncoder()
     le.fit(conditions)
     y = le.transform(tags)
-    if isinstance(rng, int):
+    if isinstance(rng, int) or rng is None:
         rng = np.random.RandomState(rng) # splits are different across repeats
     clf = make_pipeline(StandardScaler(), LinearSVC(dual=False)) # prefer dual=False when n_samples > n_features
     cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
     res = []
     for i in range(n_repeats):
-        scores = cross_val_score(clf, X, y, scoring=average, cv=cv, n_jobs=n_jobs)
+        if not compute_null:
+            scores = cross_val_score(clf, X, y, scoring=average, cv=cv, n_jobs=n_jobs)
+        else:
+            y_permuted = rng.permutation(y)
+            scores = cross_val_score(clf, X, y_permuted, scoring=average, cv=cv, n_jobs=n_jobs)
         res.extend(scores)
     return np.asarray(res)
 
