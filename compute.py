@@ -3,7 +3,7 @@ import numpy as np
 from scipy import signal, stats
 from joblib import Parallel, delayed
 from numba import njit
-from sklearn.model_selection import cross_val_score, StratifiedKFold
+from sklearn.model_selection import cross_val_score, KFold, StratifiedKFold
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.svm import LinearSVC
@@ -423,7 +423,7 @@ def acc(samples, tags, conditions, n_splits: int = 5, n_repeats: int = 10, n_job
     return np.asarray(res) * 100
 
 @ignore_warnings(category=ConvergenceWarning)
-def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, compute_null: bool = False, rng: int | np.random.RandomState | None = None) -> np.ndarray:
+def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int = 5, n_repeats: int = 10, n_jobs: int = 1, compute_null: bool = False, stratified: bool = False, rng: int | np.random.RandomState | None = None) -> np.ndarray:
     X = np.asarray(samples)[:, np.newaxis]
     le = LabelEncoder()
     le.fit(conditions)
@@ -431,7 +431,10 @@ def f1_score(samples, tags, conditions, average: str = 'f1_macro', n_splits: int
     if isinstance(rng, int) or rng is None:
         rng = np.random.RandomState(rng) # splits are different across repeats
     clf = make_pipeline(StandardScaler(), LinearSVC(dual=False)) # prefer dual=False when n_samples > n_features
-    cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
+    if not stratified:
+        cv = KFold(n_splits, shuffle=True, random_state=rng)
+    else:
+        cv = StratifiedKFold(n_splits, shuffle=True, random_state=rng)
     res = []
     for i in range(n_repeats):
         if not compute_null:
